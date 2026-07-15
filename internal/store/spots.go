@@ -9,10 +9,13 @@ import (
 	"github.com/ben/ikite-go/internal/models"
 )
 
+const spotSelectSQL = `
+	SELECT id, name, windguru_station_id, sort_order, visible, collect,
+	       collect_interval_min, collect_start_hour, collect_end_hour
+	FROM spots`
+
 func (s *Store) ListSpots() ([]models.Spot, error) {
-	rows, err := s.DB.Query(`
-		SELECT id, name, windguru_station_id, sort_order, visible, collect
-		FROM spots
+	rows, err := s.DB.Query(spotSelectSQL + `
 		ORDER BY sort_order, id`)
 	if err != nil {
 		return nil, err
@@ -42,10 +45,21 @@ func (s *Store) SpotNames() (map[string]string, error) {
 	return names, nil
 }
 
+func (s *Store) SpotByID(id string) (*models.Spot, error) {
+	row := s.DB.QueryRow(spotSelectSQL+`
+		WHERE id = ?`, id)
+	sp, err := scanSpot(row)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("unknown spot %q", id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
 func (s *Store) SpotByWindguruID(stationID int) (*models.Spot, error) {
-	row := s.DB.QueryRow(`
-		SELECT id, name, windguru_station_id, sort_order, visible, collect
-		FROM spots
+	row := s.DB.QueryRow(spotSelectSQL+`
 		WHERE windguru_station_id = ?`, stationID)
 	sp, err := scanSpot(row)
 	if err == sql.ErrNoRows {
@@ -96,14 +110,27 @@ func (s *Store) InsertWindguruSpot(name string, wgStationID int) (*models.Spot, 
 		return nil, err
 	}
 
-	row := s.DB.QueryRow(`
-		SELECT id, name, windguru_station_id, sort_order, visible, collect
-		FROM spots WHERE id = ?`, id)
+	row := s.DB.QueryRow(spotSelectSQL+`
+		WHERE id = ?`, id)
 	sp, err := scanSpot(row)
 	if err != nil {
 		return nil, err
 	}
 	return &sp, nil
+}
+
+func (s *Store) UpdateSpotSchedule(id string, interval, startHour, endHour int) error {
+	interval = models.NormalizeCollectInterval(interval)
+	startHour = models.NormalizeCollectHour(startHour, 8)
+	endHour = models.NormalizeCollectHour(endHour, 22)
+	if startHour > endHour {
+		startHour, endHour = 8, 22
+	}
+	_, err := s.DB.Exec(`
+		UPDATE spots
+		SET collect_interval_min = ?, collect_start_hour = ?, collect_end_hour = ?
+		WHERE id = ?`, interval, startHour, endHour, id)
+	return err
 }
 
 func (s *Store) VisibleSpots() ([]string, error) {
@@ -276,7 +303,8 @@ func scanSpot(row spotScanner) (models.Spot, error) {
 	var sp models.Spot
 	var wg sql.NullInt64
 	var visible, collect int
-	if err := row.Scan(&sp.ID, &sp.Name, &wg, &sp.SortOrder, &visible, &collect); err != nil {
+	if err := row.Scan(&sp.ID, &sp.Name, &wg, &sp.SortOrder, &visible, &collect,
+		&sp.CollectIntervalMin, &sp.CollectStartHour, &sp.CollectEndHour); err != nil {
 		return sp, err
 	}
 	if wg.Valid {
@@ -285,5 +313,8 @@ func scanSpot(row spotScanner) (models.Spot, error) {
 	}
 	sp.Visible = visible != 0
 	sp.Collect = collect != 0
+	sp.CollectIntervalMin = models.NormalizeCollectInterval(sp.CollectIntervalMin)
+	sp.CollectStartHour = models.NormalizeCollectHour(sp.CollectStartHour, 8)
+	sp.CollectEndHour = models.NormalizeCollectHour(sp.CollectEndHour, 22)
 	return sp, nil
 }

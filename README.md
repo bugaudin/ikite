@@ -47,7 +47,8 @@ Per-station Windguru timers (production): see `deploy/setup-wg-timers.sh` and `d
 | `KY_HISTORY_URL` | Kiryat Yam history HTML proxy |
 | `SURFO_LIVE_URL` | AI forecast JSON proxy |
 | `BEGET_WG_STATION_URL` | Windguru station proxy (`%d` = station id) |
-| `WG_TIMER_SCRIPT` | Path to `deploy/add-wg-timer.sh` on server |
+| `WG_TIMER_QUEUE_DIR` | Directory for pending timer requests (web writes, root cron processes) |
+| `WG_TIMER_SCRIPT` | Path to `deploy/add-wg-timer.sh` (used by queue processor) |
 
 ## Layout
 

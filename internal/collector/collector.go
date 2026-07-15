@@ -3,11 +3,11 @@ package collector
 import (
 	"fmt"
 	"log/slog"
-	"math"
 	"math/rand"
 	"time"
 
 	"github.com/ben/ikite-go/internal/config"
+	"github.com/ben/ikite-go/internal/models"
 	"github.com/ben/ikite-go/internal/notify/telegram"
 	"github.com/ben/ikite-go/internal/sources/kyhistory"
 	"github.com/ben/ikite-go/internal/sources/windguru"
@@ -26,31 +26,44 @@ type Service struct {
 }
 
 type Result struct {
-	WindKY    float64
-	WindKH    float64
-	MsgKY     string
-	MsgNorth  string
-	MsgBG     string
-	AlertSent bool
+	WindKY     float64
+	WindKH     float64
+	MsgKY      string
+	MsgNorth   string
+	MsgBG      string
+	AlertSent  bool
 	SavedCount int
 }
 
-// RunWindguruStation fetches and saves one Windguru station (used by per-station timers).
-func (s *Service) RunWindguruStation(now time.Time, stationID int) error {
-	delay := 2 + rand.Intn(9) // 2–10 seconds
-	s.Log.Info("windguru delay", "station", stationID, "seconds", delay)
-	time.Sleep(time.Duration(delay) * time.Second)
+func (s *Service) shouldCollectSpot(sp models.Spot, now time.Time) (bool, string) {
+	if reason := sp.CollectSkipReason(now); reason != "" {
+		return false, reason
+	}
+	last, err := s.Store.LatestWindPeriod(sp.ID)
+	if err != nil {
+		s.Log.Warn("latest wind period", "loc", sp.ID, "err", err)
+	}
+	return sp.ShouldCollectAt(now, last)
+}
 
+// RunWindguruStation fetches and saves one Windguru station (used by per-station timers).
+// Windguru/Beget HTTP is only used when schedule checks pass.
+func (s *Service) RunWindguruStation(now time.Time, stationID int) error {
 	st, err := s.Store.SpotByWindguruID(stationID)
 	if err != nil {
 		return err
 	}
-	if !st.Collect {
-		s.Log.Info("windguru skipped", "station", stationID, "loc", st.ID, "reason", "collect disabled")
+
+	now = now.In(s.Cfg.Timezone)
+	if ok, reason := s.shouldCollectSpot(*st, now); !ok {
+		s.Log.Info("windguru skipped", "station", stationID, "loc", st.ID, "reason", reason)
 		return nil
 	}
 
-	now = now.In(s.Cfg.Timezone)
+	delay := 2 + rand.Intn(9) // 2–10 seconds
+	s.Log.Info("windguru delay", "station", stationID, "seconds", delay)
+	time.Sleep(time.Duration(delay) * time.Second)
+
 	reading, _, err := s.WG.Fetch(stationID)
 	if err != nil {
 		return err
@@ -76,39 +89,50 @@ func (s *Service) Run(now time.Time) (*Result, error) {
 		return nil, fmt.Errorf("threshold: %w", err)
 	}
 
-	kyCollect, _ := s.Store.SpotCollectEnabled("ky")
-	if kyCollect && hour >= s.Cfg.KYCollectStart && hour <= s.Cfg.KYCollectEnd {
-		readings, stats, err := s.KY.Fetch(now)
-		if err != nil {
-			s.Log.Error("ky history fetch failed", "err", err)
-		} else {
-			for _, r := range readings {
-				if err := s.Store.InsertWind(r); err != nil {
-					s.Log.Error("insert ky wind", "err", err, "period", r.Period)
-				} else {
-					res.SavedCount++
+	if ky, err := s.Store.SpotByID("ky"); err == nil {
+		if ok, reason := s.shouldCollectSpot(*ky, now); ok {
+			readings, stats, err := s.KY.Fetch(now)
+			if err != nil {
+				s.Log.Error("ky history fetch failed", "err", err)
+			} else {
+				for _, r := range readings {
+					if err := s.Store.InsertWind(r); err != nil {
+						s.Log.Error("insert ky wind", "err", err, "period", r.Period)
+					} else {
+						res.SavedCount++
+					}
 				}
+				res.WindKY = stats.WindMax
+				res.MsgKY = stats.Msg
+				s.Log.Info("ky history saved", "rows", len(readings), "wind_ky", res.WindKY)
 			}
-			res.WindKY = stats.WindMax
-			res.MsgKY = stats.Msg
-			s.Log.Info("ky history saved", "rows", len(readings), "wind_ky", res.WindKY)
+		} else {
+			s.Log.Info("ky skipped", "loc", ky.ID, "reason", reason)
 		}
 	}
 
-	khCollect, _ := s.Store.SpotCollectEnabled("kh")
-	kh, _, err := s.KH.FetchHistory(now)
-	if err != nil {
-		s.Log.Warn("windometer fetch failed", "err", err)
-	} else if khCollect {
-		if err := s.Store.InsertWind(*kh); err != nil {
-			s.Log.Error("insert kh wind", "err", err)
+	var kh *models.WindReading
+	if spot, err := s.Store.SpotByID("kh"); err == nil {
+		if ok, reason := s.shouldCollectSpot(*spot, now); ok {
+			var err error
+			kh, _, err = s.KH.FetchHistory(now)
+			if err != nil {
+				s.Log.Warn("windometer fetch failed", "err", err)
+			} else if kh != nil {
+				if err := s.Store.InsertWind(*kh); err != nil {
+					s.Log.Error("insert kh wind", "err", err)
+				} else {
+					res.SavedCount++
+					res.WindKH = kh.Wind
+					s.Log.Info("saved kh", "wind", kh.Wind, "gust", kh.Gust)
+				}
+			}
 		} else {
-			res.SavedCount++
-			res.WindKH = kh.Wind
-			s.Log.Info("saved kh", "wind", kh.Wind, "gust", kh.Gust)
+			s.Log.Info("kh skipped", "loc", spot.ID, "reason", reason)
+			if w, err := s.Store.LatestWind("kh"); err == nil {
+				res.WindKH = w
+			}
 		}
-	} else if kh != nil {
-		res.WindKH = kh.Wind
 	}
 
 	if res.WindKY == 0 {
@@ -147,8 +171,4 @@ func (s *Service) Run(now time.Time) (*Result, error) {
 	}
 
 	return res, nil
-}
-
-func round1(v float64) float64 {
-	return math.Round(v*10) / 10
 }

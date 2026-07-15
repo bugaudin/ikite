@@ -94,6 +94,17 @@ func (s *Store) LatestGust(location string) (float64, error) {
 	return gust, err
 }
 
+func (s *Store) LatestWindPeriod(location string) (time.Time, error) {
+	var period time.Time
+	err := s.DB.QueryRow(`
+		SELECT period FROM wind_data WHERE location = ?
+		ORDER BY period DESC LIMIT 1`, location).Scan(&period)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	return period, err
+}
+
 func (s *Store) LatestWind(location string) (float64, error) {
 	var wind float64
 	err := s.DB.QueryRow(`

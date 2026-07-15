@@ -1,5 +1,6 @@
 #!/bin/bash
-# Enable a 5-minute Windguru collector timer for one station (run as root).
+# Enable a 1-minute Windguru collector poll for one station (run as root).
+# Per-spot interval and hours are enforced in the collector.
 # Usage: add-wg-timer.sh STATION_ID
 set -euo pipefail
 
@@ -28,20 +29,15 @@ UNIT
 fi
 
 TIMER="/etc/systemd/system/ikite-wg-collector@${STATION_ID}.timer"
-if [[ -f "$TIMER" ]]; then
-  systemctl enable --now "ikite-wg-collector@${STATION_ID}.timer"
-  echo "Timer already exists for station ${STATION_ID}"
-  exit 0
-fi
 
-offset=$(( (STATION_ID % 15) * 20 ))
+offset=$(( (STATION_ID % 15) * 4 ))
 tee "$TIMER" >/dev/null <<UNIT
 [Unit]
-Description=Windguru station ${STATION_ID} every 5 minutes
+Description=Windguru station ${STATION_ID} every minute
 
 [Timer]
 OnBootSec=$((3 * 60 + offset))s
-OnUnitActiveSec=5min
+OnUnitActiveSec=1min
 Persistent=true
 
 [Install]

@@ -22,19 +22,19 @@ offset=0
 for id in "${STATIONS[@]}"; do
   sudo tee "/etc/systemd/system/ikite-wg-collector@${id}.timer" >/dev/null <<UNIT
 [Unit]
-Description=Windguru station ${id} every 5 minutes
+Description=Windguru station ${id} every minute
 
 [Timer]
 OnBootSec=$((3 * 60 + offset))s
-OnUnitActiveSec=5min
+OnUnitActiveSec=1min
 Persistent=true
 
 [Install]
 WantedBy=timers.target
 UNIT
   sudo systemctl enable --now "ikite-wg-collector@${id}.timer"
-  offset=$((offset + 20))
+  offset=$((offset + 4))
 done
 
 sudo systemctl daemon-reload
-echo "Enabled ${#STATIONS[@]} windguru station timers (20s apart)"
+echo "Enabled ${#STATIONS[@]} windguru station timers (4s apart, poll every 1 min)"

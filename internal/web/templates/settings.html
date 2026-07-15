@@ -19,7 +19,7 @@
     .spot-status.err { color: #c00; }
     .add-spot { margin: 16px 0 24px; padding: 12px; border: 1px solid #ddd; max-width: 480px; }
     .add-spot label { display: block; margin-top: 8px; }
-    .add-spot input { width: 100%; max-width: 280px; box-sizing: border-box; }
+    table.spots select { padding: 4px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -63,22 +63,46 @@
           <th style="width:90px">Order</th>
           <th>Display on index</th>
           <th>Save to DB</th>
+          <th>Interval</th>
+          <th>Start</th>
+          <th>Stop</th>
         </tr>
       </thead>
       <tbody id="spots-body">
-        {{range .Spots}}
-        <tr data-key="{{.Key}}" draggable="true">
+        {{range $sp := .Spots}}
+        <tr data-key="{{$sp.Key}}" draggable="true">
           <td class="drag-handle" title="Drag to reorder">⋮⋮</td>
-          <td>{{.Name}} <small>({{.Key}})</small></td>
+          <td>{{$sp.Name}} <small>({{$sp.Key}})</small></td>
           <td class="center reorder-btns">
             <button type="button" class="move-up" title="Move up">↑</button>
             <button type="button" class="move-down" title="Move down">↓</button>
           </td>
           <td class="center">
-            <input type="checkbox" class="spot-visible" data-key="{{.Key}}"{{if .Visible}} checked{{end}} />
+            <input type="checkbox" class="spot-visible" data-key="{{$sp.Key}}"{{if $sp.Visible}} checked{{end}} />
           </td>
           <td class="center">
-            <input type="checkbox" class="spot-collect" data-key="{{.Key}}"{{if .Collect}} checked{{end}} />
+            <input type="checkbox" class="spot-collect" data-key="{{$sp.Key}}"{{if $sp.Collect}} checked{{end}} />
+          </td>
+          <td class="center">
+            <select class="spot-interval" data-key="{{$sp.Key}}">
+              {{range $.CollectIntervals}}
+              <option value="{{.}}"{{if eq $sp.CollectInterval .}} selected{{end}}>{{.}} min</option>
+              {{end}}
+            </select>
+          </td>
+          <td class="center">
+            <select class="spot-start" data-key="{{$sp.Key}}">
+              {{range $.CollectHours}}
+              <option value="{{.}}"{{if eq $sp.CollectStartHour .}} selected{{end}}>{{.}}:00</option>
+              {{end}}
+            </select>
+          </td>
+          <td class="center">
+            <select class="spot-end" data-key="{{$sp.Key}}">
+              {{range $.CollectHours}}
+              <option value="{{.}}"{{if eq $sp.CollectEndHour .}} selected{{end}}>{{.}}:00</option>
+              {{end}}
+            </select>
           </td>
         </tr>
         {{end}}
@@ -178,6 +202,7 @@
         const order = [];
         const visible = [];
         const collect = [];
+        const schedules = {};
         tbody.querySelectorAll('tr[data-key]').forEach(function (row) {
           const key = row.dataset.key;
           order.push(key);
@@ -187,11 +212,17 @@
           if (row.querySelector('.spot-collect').checked) {
             collect.push(key);
           }
+          schedules[key] = {
+            interval: parseInt(row.querySelector('.spot-interval').value, 10),
+            start: parseInt(row.querySelector('.spot-start').value, 10),
+            end: parseInt(row.querySelector('.spot-end').value, 10)
+          };
         });
         return {
           spot_order: order.join(','),
           visible_spots: visible.join(','),
-          collect_spots: collect.join(',')
+          collect_spots: collect.join(','),
+          spot_schedules: JSON.stringify(schedules)
         };
       }
 
@@ -224,7 +255,11 @@
       }
 
       tbody.addEventListener('change', function (e) {
-        if (e.target.classList.contains('spot-visible') || e.target.classList.contains('spot-collect')) {
+        if (e.target.classList.contains('spot-visible') ||
+            e.target.classList.contains('spot-collect') ||
+            e.target.classList.contains('spot-interval') ||
+            e.target.classList.contains('spot-start') ||
+            e.target.classList.contains('spot-end')) {
           saveSpots();
         }
       });
@@ -246,7 +281,9 @@
 
       tbody.addEventListener('dragstart', function (e) {
         const row = e.target.closest('tr[data-key]');
-        if (!row || e.target.classList.contains('spot-visible') || e.target.classList.contains('spot-collect')) {
+        if (!row || e.target.classList.contains('spot-visible') || e.target.classList.contains('spot-collect') ||
+            e.target.classList.contains('spot-interval') || e.target.classList.contains('spot-start') ||
+            e.target.classList.contains('spot-end') || e.target.tagName === 'SELECT') {
           e.preventDefault();
           return;
         }

@@ -307,6 +307,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"ForecastTelegram": forecastTelegram,
 		"Spots":            spotRows,
 		"Buttons":          buttons,
+		"CollectIntervals": models.ValidCollectIntervals,
+		"CollectHours":     models.ValidCollectHours(),
 	}
 	if err := s.tmpl.ExecuteTemplate(w, "settings.html", data); err != nil {
 		s.Log.Error("render settings", "err", err)
@@ -384,6 +386,27 @@ func (s *Server) handleSettingsSpots(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		if sched := r.FormValue("spot_schedules"); sched != "" {
+			var schedules map[string]struct {
+				Interval int `json:"interval"`
+				Start    int `json:"start"`
+				End      int `json:"end"`
+			}
+			if err := json.Unmarshal([]byte(sched), &schedules); err != nil {
+				http.Error(w, "invalid spot schedules", http.StatusBadRequest)
+				return
+			}
+			for id, sc := range schedules {
+				if !valid[id] {
+					continue
+				}
+				if err := s.Store.UpdateSpotSchedule(id, sc.Interval, sc.Start, sc.End); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -425,9 +448,9 @@ func (s *Server) handleSettingsSpotsAdd(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := wgtimer.Enable(s.Cfg.WGTimerScript, wgID); err != nil {
-		s.Log.Error("enable wg timer", "station", wgID, "err", err)
-		http.Error(w, "spot saved but failed to enable collector timer: "+err.Error(), http.StatusInternalServerError)
+	if err := wgtimer.Queue(s.Cfg.WGTimerQueueDir, wgID); err != nil {
+		s.Log.Error("queue wg timer", "station", wgID, "err", err)
+		http.Error(w, "spot saved but failed to queue collector timer: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -472,10 +495,13 @@ func (s *Server) settingsSpotRows() ([]map[string]any, error) {
 	rows := make([]map[string]any, 0, len(spots))
 	for _, sp := range spots {
 		rows = append(rows, map[string]any{
-			"Key":     sp.ID,
-			"Name":    sp.Name,
-			"Visible": sp.Visible,
-			"Collect": sp.Collect,
+			"Key":              sp.ID,
+			"Name":             sp.Name,
+			"Visible":          sp.Visible,
+			"Collect":          sp.Collect,
+			"CollectInterval":  sp.CollectIntervalMin,
+			"CollectStartHour": sp.CollectStartHour,
+			"CollectEndHour":   sp.CollectEndHour,
 		})
 	}
 	return rows, nil

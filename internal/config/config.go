@@ -28,8 +28,9 @@ type Config struct {
 	KYCollectStart int
 	KYCollectEnd   int
 
-	WGTimerScript string
-	SettingsPass  string
+	WGTimerScript   string
+	WGTimerQueueDir string
+	SettingsPass    string
 }
 
 func Load() (*Config, error) {
@@ -68,6 +69,7 @@ func Load() (*Config, error) {
 		KYCollectStart:      getenvInt("KY_COLLECT_START_HOUR", 9),
 		KYCollectEnd:        getenvInt("KY_COLLECT_END_HOUR", 19),
 		WGTimerScript:       os.Getenv("WG_TIMER_SCRIPT"),
+		WGTimerQueueDir:     os.Getenv("WG_TIMER_QUEUE_DIR"),
 		SettingsPass:        os.Getenv("SETTINGS_PASS"),
 	}, nil
 }

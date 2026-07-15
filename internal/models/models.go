@@ -32,6 +32,66 @@ type Spot struct {
 	SortOrder         int
 	Visible           bool
 	Collect           bool
+	CollectIntervalMin int
+	CollectStartHour   int
+	CollectEndHour     int
+}
+
+// ValidCollectIntervals are allowed update intervals (minutes).
+var ValidCollectIntervals = []int{1, 5, 10, 15, 30}
+
+// ValidCollectHours are allowed start/stop hours (inclusive).
+func ValidCollectHours() []int {
+	h := make([]int, 0, 17)
+	for i := 6; i <= 22; i++ {
+		h = append(h, i)
+	}
+	return h
+}
+
+func NormalizeCollectInterval(v int) int {
+	for _, n := range ValidCollectIntervals {
+		if v == n {
+			return v
+		}
+	}
+	return 5
+}
+
+func NormalizeCollectHour(v, fallback int) int {
+	if v >= 6 && v <= 22 {
+		return v
+	}
+	return fallback
+}
+
+// CollectSkipReason returns why collection should not run, without needing the
+// last-collect time. Empty string means the spot may collect (interval still applies).
+func (sp Spot) CollectSkipReason(now time.Time) string {
+	if !sp.Collect {
+		return "collect disabled"
+	}
+	hour := now.Hour()
+	if hour < sp.CollectStartHour || hour > sp.CollectEndHour {
+		return "outside hours"
+	}
+	return ""
+}
+
+// ShouldCollectAt reports whether a reading should be collected now.
+// Start and stop hours are inclusive whole hours in the app timezone
+// (e.g. start 8 / stop 22 → 08:00:00 through 22:59:59).
+func (sp Spot) ShouldCollectAt(now time.Time, lastCollect time.Time) (bool, string) {
+	if reason := sp.CollectSkipReason(now); reason != "" {
+		return false, reason
+	}
+	if sp.CollectIntervalMin > 0 && !lastCollect.IsZero() {
+		minWait := time.Duration(sp.CollectIntervalMin) * time.Minute
+		if now.Sub(lastCollect) < minWait {
+			return false, "interval not elapsed"
+		}
+	}
+	return true, ""
 }
 
 func CardinalDirection(angle float64) string {

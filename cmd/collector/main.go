@@ -4,12 +4,12 @@ import (
 	"flag"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/ben/ikite-go/internal/db"
 
 	"github.com/ben/ikite-go/internal/collector"
 	"github.com/ben/ikite-go/internal/config"
-	"github.com/ben/ikite-go/internal/db"
 	"github.com/ben/ikite-go/internal/notify/telegram"
 	"github.com/ben/ikite-go/internal/sources/kyhistory"
 	"github.com/ben/ikite-go/internal/sources/windguru"
@@ -35,25 +35,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer sqlDB.Close()
-
-	if mig := os.Getenv("MIGRATE"); mig == "1" || mig == "true" {
-		dir := "migrations"
-		if v := os.Getenv("MIGRATIONS_PATH"); v != "" {
-			dir = v
-		}
-		if abs, err := filepath.Abs(dir); err == nil {
-			dir = abs
-		}
-		if err := db.MigrateDir(sqlDB, dir); err != nil {
-			log.Error("migrate", "err", err)
-			os.Exit(1)
-		}
-		st := store.New(sqlDB)
-		if err := st.ApplyLegacySpotSettings(); err != nil {
-			log.Error("migrate spot settings", "err", err)
-			os.Exit(1)
-		}
-	}
 
 	svc := &collector.Service{
 		Cfg:      cfg,

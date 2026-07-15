@@ -2,23 +2,27 @@ package wgtimer
 
 import (
 	"fmt"
-	"os/exec"
+	"os"
+	"path/filepath"
 	"strconv"
 )
 
-// Enable starts (or ensures) the systemd timer for a Windguru station ID.
-// script is the path to add-wg-timer.sh; empty skips (local dev).
-func Enable(script string, stationID int) error {
-	if script == "" {
+// Queue requests a Windguru collector timer for stationID.
+// A root cron job (deploy/process-wg-timer-queue.sh) picks up files from queueDir.
+// Empty queueDir skips (local dev).
+func Queue(queueDir string, stationID int) error {
+	if queueDir == "" {
 		return nil
 	}
 	if stationID <= 0 {
 		return fmt.Errorf("invalid station id %d", stationID)
 	}
-	cmd := exec.Command("sudo", script, strconv.Itoa(stationID))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("enable wg timer %d: %w: %s", stationID, err, string(out))
+	if err := os.MkdirAll(queueDir, 0o755); err != nil {
+		return fmt.Errorf("create timer queue dir: %w", err)
+	}
+	path := filepath.Join(queueDir, strconv.Itoa(stationID))
+	if err := os.WriteFile(path, []byte(strconv.Itoa(stationID)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("queue wg timer %d: %w", stationID, err)
 	}
 	return nil
 }
