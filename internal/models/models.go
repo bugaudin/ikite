@@ -72,15 +72,15 @@ func (sp Spot) CollectSkipReason(now time.Time) string {
 		return "collect disabled"
 	}
 	hour := now.Hour()
-	if hour < sp.CollectStartHour || hour > sp.CollectEndHour {
+	if hour < sp.CollectStartHour || hour >= sp.CollectEndHour {
 		return "outside hours"
 	}
 	return ""
 }
 
 // ShouldCollectAt reports whether a reading should be collected now.
-// Start and stop hours are inclusive whole hours in the app timezone
-// (e.g. start 8 / stop 22 → 08:00:00 through 22:59:59).
+// Start hour is inclusive; stop hour is exclusive (stop 22 → no collection from 22:00).
+// Example: start 8 / stop 22 → 08:00:00 through 21:59:59.
 func (sp Spot) ShouldCollectAt(now time.Time, lastCollect time.Time) (bool, string) {
 	if reason := sp.CollectSkipReason(now); reason != "" {
 		return false, reason

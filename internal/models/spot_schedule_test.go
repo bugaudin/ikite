@@ -31,12 +31,12 @@ func TestSpotShouldCollectAt(t *testing.T) {
 		t.Fatalf("expected outside hours, got ok=%v reason=%q", ok, reason)
 	}
 
-	ok, reason = sp.ShouldCollectAt(time.Date(2026, 7, 15, 23, 0, 0, 0, loc), time.Time{})
+	ok, reason = sp.ShouldCollectAt(time.Date(2026, 7, 15, 22, 30, 0, 0, loc), time.Time{})
 	if ok || reason != "outside hours" {
-		t.Fatalf("expected outside hours after stop, got ok=%v reason=%q", ok, reason)
+		t.Fatalf("expected outside hours at stop hour, got ok=%v reason=%q", ok, reason)
 	}
 
-	ok, _ = sp.ShouldCollectAt(time.Date(2026, 7, 15, 22, 30, 0, 0, loc), time.Time{})
+	ok, _ = sp.ShouldCollectAt(time.Date(2026, 7, 15, 21, 30, 0, 0, loc), time.Time{})
 	if !ok {
 		t.Fatal("expected collect during last allowed hour")
 	}
