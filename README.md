@@ -1,6 +1,6 @@
 # ikite-go
 
-Go port of [kywind.ru](https://kywind.ru) — Israeli Mediterranean wind monitoring for kitesurfing/windsurfing.
+Israeli Mediterranean wind monitoring for kitesurfing/windsurfing.
 
 ## Features
 
