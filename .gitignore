@@ -1,0 +1,29 @@
+# Local secrets & environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# SSH / TLS keys (never commit private keys)
+server-keys/*
+!server-keys/README.md
+*.pem
+
+# Build artifacts
+bin/
+*.exe
+*.test
+*.out
+
+# Logs & runtime
+*.log
+
+# OS & editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Docker local data (if bind-mounted)
+ikite_mysql/

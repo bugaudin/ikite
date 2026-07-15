@@ -1,0 +1,7 @@
+# Install on the server (paths must match your deployment):
+#   sudo cp deploy/ikite-sudoers.example /etc/sudoers.d/ikite-wg-timer
+#   sudo chmod 440 /etc/sudoers.d/ikite-wg-timer
+#   sudo visudo -c -f /etc/sudoers.d/ikite-wg-timer
+#
+# Allow ikite server to enable Windguru collector timers when spots are added via settings.
+ikite ALL=(root) NOPASSWD: /opt/ikite-go/deploy/add-wg-timer.sh

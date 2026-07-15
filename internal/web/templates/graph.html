@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wind Graph</title>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <style>
+    nav a { margin-right: 12px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Table</a>
+    <a href="/graph">Graph</a>
+    <a href="/graph?p=day">Day</a>
+    <a href="/graph?p=week">Week</a>
+    <a href="/camera">Camera</a>
+  </nav>
+  <div id="chart"></div>
+  <script id="graph-data" type="application/json">
+  {"series":{
+  {{$first := true}}{{range $loc, $pts := .Series}}{{if not $first}},{{end}}{{$first = false}}
+  "{{$loc}}":[{{range $i, $p := $pts}}{{if $i}},{{end}}[{{index $p 0}},{{index $p 1}}]{{end}}]
+  {{end}}
+  },"locs":[{{range $i, $l := .Locs}}{{if $i}},{{end}}"{{$l}}"{{end}}]}
+  </script>
+  <script>
+    const raw = JSON.parse(document.getElementById('graph-data').textContent);
+    const options = {
+      series: raw.locs.map(name => ({ name, data: raw.series[name] || [] })),
+      chart: {
+        type: 'area',
+        stacked: false,
+        height: 350,
+        zoom: { type: 'x', enabled: true, autoScaleYaxis: true },
+        toolbar: { autoSelected: 'zoom' }
+      },
+      dataLabels: { enabled: false },
+      markers: { size: 0 },
+      yaxis: {
+        labels: { formatter: (val) => val },
+        title: { text: 'Wind Speed' }
+      },
+      xaxis: { type: 'datetime' },
+      tooltip: {
+        shared: false,
+        y: { formatter: (val) => val }
+      }
+    };
+    new ApexCharts(document.querySelector('#chart'), options).render();
+  </script>
+</body>
+</html>
