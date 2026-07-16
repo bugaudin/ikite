@@ -2,6 +2,7 @@
 # Finish OCI CLI setup after uploading the public key in Oracle Console.
 # Usage:
 #   TENANCY_OCID=ocid1.tenancy... USER_OCID=ocid1.user... ./scripts/oci-finish-setup.sh
+# Optional: INSTANCE_OCID=... or INSTANCE_NAME=ikite (default) to save ~/.oci/ikite-instance.env
 
 set -euo pipefail
 
@@ -42,21 +43,28 @@ echo "Testing API access..."
 oci iam region list --query 'data[0].name' --raw-output >/dev/null
 echo "OK — OCI CLI is configured."
 
-echo ""
-echo "Finding ikite instance (public IP 82.70.213.129)..."
-INSTANCE_ID=$(oci compute instance list --all \
-  --query "data[?\"lifecycle-state\"=='RUNNING'].{id:id,name:\"display-name\",ip:\"public-ip\"}" \
-  --output json 2>/dev/null | python3 -c "
-import json,sys
+if [[ -n "${INSTANCE_OCID:-}" ]]; then
+  INSTANCE_ID="$INSTANCE_OCID"
+else
+  INSTANCE_PATTERN="${INSTANCE_NAME:-ikite}"
+  echo ""
+  echo "Finding OCI instance (display name contains \"${INSTANCE_PATTERN}\")..."
+  INSTANCE_ID=$(oci compute instance list --all \
+    --query "data[?\"lifecycle-state\"=='RUNNING'].{id:id,name:\"display-name\"}" \
+    --output json 2>/dev/null | INSTANCE_PATTERN="$INSTANCE_PATTERN" python3 -c "
+import json, os, sys
+pattern = os.environ.get('INSTANCE_PATTERN', 'ikite').lower()
 for i in json.load(sys.stdin):
-    if i.get('ip')=='82.70.213.129' or 'ikite' in (i.get('name') or '').lower():
-        print(i['id']); break
+    if pattern in (i.get('name') or '').lower():
+        print(i['id'])
+        break
 " 2>/dev/null || true)
+fi
 
 if [[ -n "$INSTANCE_ID" ]]; then
   echo "instance_ocid=${INSTANCE_ID}" > "${HOME}/.oci/ikite-instance.env"
   chmod 600 "${HOME}/.oci/ikite-instance.env"
   echo "Saved instance OCID to ~/.oci/ikite-instance.env"
 else
-  echo "Could not auto-detect instance — list with: oci compute instance list --all"
+  echo "Could not auto-detect instance — set INSTANCE_OCID or INSTANCE_NAME, or run: oci compute instance list --all"
 fi

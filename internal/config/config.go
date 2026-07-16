@@ -18,6 +18,7 @@ type Config struct {
 	SurfoLiveURL       string
 	WindometerLiveURL  string
 	BegetProxyURL      string
+	BegetProxySecret   string
 
 	TelegramAlertToken  string
 	TelegramAlertChatID string
@@ -62,6 +63,7 @@ func Load() (*Config, error) {
 		SurfoLiveURL:        os.Getenv("SURFO_LIVE_URL"),
 		WindometerLiveURL:   os.Getenv("WINDOMETER_LIVE_URL"),
 		BegetProxyURL:       os.Getenv("BEGET_PROXY_URL"),
+		BegetProxySecret:    os.Getenv("BEGET_PROXY_SECRET"),
 		TelegramAlertToken:  os.Getenv("TELEGRAM_ALERT_TOKEN"),
 		TelegramAlertChatID: os.Getenv("TELEGRAM_ALERT_CHAT_ID"),
 		TelegramAIToken:     os.Getenv("TELEGRAM_AI_TOKEN"),

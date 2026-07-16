@@ -34,7 +34,7 @@ func main() {
 	svc := &collector.ForecastService{
 		Cfg:       cfg,
 		Store:     store.New(sqlDB),
-		Surfo:     surfo.New(begetproxy.New(cfg.BegetProxyURL), cfg.SurfoLiveURL),
+		Surfo:     surfo.New(begetproxy.New(cfg.BegetProxyURL, cfg.BegetProxySecret), cfg.SurfoLiveURL),
 		Translate: translate.New(),
 		Telegram:  telegram.New(cfg.TelegramAIToken, cfg.TelegramAIChatID),
 		Log:       log,

@@ -36,7 +36,7 @@ func main() {
 	}
 	defer sqlDB.Close()
 
-	proxy := begetproxy.New(cfg.BegetProxyURL)
+	proxy := begetproxy.New(cfg.BegetProxyURL, cfg.BegetProxySecret)
 
 	svc := &collector.Service{
 		Cfg:      cfg,

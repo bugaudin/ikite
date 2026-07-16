@@ -36,7 +36,7 @@ func main() {
 	svc := &collector.WGForecastService{
 		Cfg:   cfg,
 		Store: store.New(sqlDB),
-		WG:    windguru.NewForecast(begetproxy.New(cfg.BegetProxyURL)),
+		WG:    windguru.NewForecast(begetproxy.New(cfg.BegetProxyURL, cfg.BegetProxySecret)),
 		Log:   log,
 	}
 

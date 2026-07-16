@@ -1,11 +1,24 @@
 <?php
-// Generic HTTP proxy for shared hosting (PHP 5.6+).
-// Upload as proxy_post.php — all target URLs and headers come from the client (POST JSON).
-//
-// Request body (application/json):
-//   { "url": "https://example.com/path?query=1", "method": "GET", "headers": { "Accept": "*/*" }, "body": "" }
+// Copy to proxy_post.php (gitignored), set PROXY_SECRET, upload to Beget.
+// Request: POST JSON + header X-Proxy-Secret
+//   { "url": "https://example.com/path", "method": "GET", "headers": {}, "body": "" }
+
+define('PROXY_SECRET', '__PROXY_SECRET__');
 
 header('Content-Type: application/json; charset=utf-8');
+
+if (PROXY_SECRET === '' || PROXY_SECRET === '__PROXY_SECRET__') {
+    http_response_code(503);
+    echo json_encode(array('error' => 'proxy secret not configured'));
+    exit;
+}
+
+$clientSecret = isset($_SERVER['HTTP_X_PROXY_SECRET']) ? $_SERVER['HTTP_X_PROXY_SECRET'] : '';
+if ($clientSecret === '' || !hash_equals(PROXY_SECRET, $clientSecret)) {
+    http_response_code(401);
+    echo json_encode(array('error' => 'unauthorized'));
+    exit;
+}
 
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);

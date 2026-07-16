@@ -27,3 +27,6 @@ bin/
 
 # Docker local data (if bind-mounted)
 ikite_mysql/
+
+# Beget proxy with hardcoded secret (copy from proxy_post.php.example)
+deploy/beget/proxy_post.php

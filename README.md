@@ -47,6 +47,7 @@ Per-station Windguru timers (production): see `deploy/setup-wg-timers.sh` and `d
 | `TELEGRAM_ALERT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` | Wind alert bot |
 | `TELEGRAM_AI_TOKEN` / `TELEGRAM_AI_CHAT_ID` | Forecast bot |
 | `BEGET_PROXY_URL` | Generic Beget `proxy_post.php` — all outbound fetches POST JSON here |
+| `BEGET_PROXY_SECRET` | Shared secret — must match `PROXY_SECRET` in uploaded `proxy_post.php` |
 | `KY_HISTORY_URL` | Upstream Surfo KY wind JSON (`api_wind.php`) |
 | `SURFO_LIVE_URL` | Upstream Surfo AI forecast JSON |
 | `WG_TIMER_QUEUE_DIR` | Directory for pending timer requests (web writes, root cron processes) |
@@ -69,7 +70,7 @@ Spots (names, Windguru IDs, visibility) are stored in the `spots` database table
 
 - `.env`, `server-keys/`, `*.pem`, and `bin/` are gitignored
 - Never commit Telegram tokens, DB passwords, `SETTINGS_PASS`, or SSH keys
-- Upload `deploy/beget/proxy_post.php` to your hosting; configure `BEGET_PROXY_URL` and upstream URLs via env
+- Copy `deploy/beget/proxy_post.php.example` to `proxy_post.php`, set `PROXY_SECRET`, upload to Beget; set the same value as `BEGET_PROXY_SECRET` in env
 
 ## Not ported (yet)
 

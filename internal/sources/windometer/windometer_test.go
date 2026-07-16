@@ -24,7 +24,7 @@ func TestFetch(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	client := New(begetproxy.New(proxy.URL), upstream.URL+"?slugs="+khSlug)
+	client := New(begetproxy.New(proxy.URL, "test"), upstream.URL+"?slugs="+khSlug)
 	now := time.Unix(1784190067, 0).In(time.UTC)
 	reading, _, err := client.Fetch(now)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestFetchStale(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	client := New(begetproxy.New(proxy.URL), "http://example/live?slugs="+khSlug)
+	client := New(begetproxy.New(proxy.URL, "test"), "http://example/live?slugs="+khSlug)
 	reading, _, err := client.Fetch(time.Now())
 	if err != nil {
 		t.Fatal(err)

@@ -14,14 +14,16 @@ import (
 // Client forwards HTTP requests through a generic Beget proxy_post.php (POST JSON).
 // Set URL to "direct" to call upstream hosts without the proxy (emergency / local only).
 type Client struct {
-	HTTP *http.Client
-	URL  string
+	HTTP   *http.Client
+	URL    string
+	Secret string
 }
 
-func New(url string) *Client {
+func New(url, secret string) *Client {
 	return &Client{
-		HTTP: &http.Client{Timeout: 90 * time.Second},
-		URL:  strings.TrimRight(url, "/"),
+		HTTP:   &http.Client{Timeout: 90 * time.Second},
+		URL:    strings.TrimRight(url, "/"),
+		Secret: secret,
 	}
 }
 
@@ -50,6 +52,9 @@ func (c *Client) Do(req Request) ([]byte, error) {
 	if c.URL == "direct" {
 		return c.doDirect(req)
 	}
+	if c.Secret == "" {
+		return nil, fmt.Errorf("beget proxy secret not configured")
+	}
 
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -61,6 +66,7 @@ func (c *Client) Do(req Request) ([]byte, error) {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Proxy-Secret", c.Secret)
 	httpReq.Header.Set("Accept", "application/json, text/plain, */*")
 	httpReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	if origin := proxyOrigin(c.URL); origin != "" {

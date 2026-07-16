@@ -32,6 +32,8 @@ func TestRequestJSONKeys(t *testing.T) {
 }
 
 func TestClientDo(t *testing.T) {
+	const testSecret = "test-secret"
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Test") != "1" {
 			t.Fatalf("missing header: %+v", r.Header)
@@ -43,6 +45,10 @@ func TestClientDo(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method: %s", r.Method)
+		}
+		if r.Header.Get("X-Proxy-Secret") != testSecret {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
 		}
 		body, _ := io.ReadAll(r.Body)
 		var req Request
@@ -70,7 +76,7 @@ func TestClientDo(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	client := New(proxy.URL)
+	client := New(proxy.URL, testSecret)
 	out, err := client.Get(upstream.URL, map[string]string{"X-Test": "1"})
 	if err != nil {
 		t.Fatal(err)
