@@ -1,0 +1,27 @@
+[Unit]
+Description=ikite-go wind dashboard
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=ikite
+Group=ikite
+WorkingDirectory=/opt/ikite-go
+EnvironmentFile=/etc/ikite-go/env
+EnvironmentFile=-/etc/ikite-go/server.env
+Environment=MIGRATE=1
+Environment=MIGRATIONS_PATH=/opt/ikite-go/migrations
+ExecStart=/opt/ikite-go/bin/server
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ikite-go
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

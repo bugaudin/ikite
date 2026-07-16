@@ -27,6 +27,9 @@ func TestTemplatesParse(t *testing.T) {
 	if s.tmpl.Lookup("camera.html") == nil {
 		t.Fatal("camera.html missing")
 	}
+	if s.tmpl.Lookup("prediction.html") == nil {
+		t.Fatal("prediction.html missing")
+	}
 }
 
 func TestHealthz(t *testing.T) {

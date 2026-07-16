@@ -1,47 +1,31 @@
 package kyhistory
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ben/ikite-go/internal/begetproxy"
 	"github.com/ben/ikite-go/internal/models"
-	"golang.org/x/net/html"
 )
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36"
 
-var (
-	ktRe     = regexp.MustCompile(`(?i)\s*kt$`)
-	rotateRe = regexp.MustCompile(`(?i)rotate\(\s*([\d.]+)deg\)`)
-	numRe    = regexp.MustCompile(`[^0-9.\-+]`)
-)
-
 type Client struct {
-	HTTP *http.Client
-	URL  string
+	Proxy       *begetproxy.Client
+	UpstreamURL string
 }
 
-func New(url string) *Client {
+func New(proxy *begetproxy.Client, upstreamURL string) *Client {
 	return &Client{
-		HTTP: &http.Client{Timeout: 30 * time.Second},
-		URL:  url,
+		Proxy:       proxy,
+		UpstreamURL: upstreamURL,
 	}
 }
 
-type Row struct {
-	Time        string
-	Temperature float64
-	Wind        float64
-	Gust        float64
-	Direction   float64
-}
-
-// AlertStats is computed from the first 5 history rows (same as PHP).
+// AlertStats is computed from the five most recent history rows (same as PHP).
 type AlertStats struct {
 	WindMax float64
 	WindMin float64
@@ -50,152 +34,117 @@ type AlertStats struct {
 	Msg     string
 }
 
+type apiWindResponse struct {
+	Headers []string   `json:"headers"`
+	Rows    [][]string `json:"rows"`
+}
+
 func (c *Client) Fetch(now time.Time) ([]models.WindReading, AlertStats, error) {
-	req, err := http.NewRequest(http.MethodGet, c.URL, nil)
+	fetchURL := c.UpstreamURL
+	sep := "?"
+	if strings.Contains(fetchURL, "?") {
+		sep = "&"
+	}
+	fetchURL += sep + "_t=" + strconv.FormatInt(now.UnixMilli(), 10)
+
+	body, err := c.Proxy.Get(fetchURL, map[string]string{
+		"user-agent": userAgent,
+		"accept":     "*/*",
+	})
 	if err != nil {
 		return nil, AlertStats{}, err
 	}
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return nil, AlertStats{}, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, AlertStats{}, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, AlertStats{}, fmt.Errorf("ky history status %d", resp.StatusCode)
+	if len(body) > 0 && body[0] == '<' {
+		return nil, AlertStats{}, fmt.Errorf("ky wind api: blocked (HTML response)")
 	}
 
-	rows, err := parseTable(string(body))
+	rows, err := parseAPIWind(body, now.Location())
 	if err != nil {
 		return nil, AlertStats{}, err
 	}
 
-	day := now.Format("2006-01-02")
-	stats := AlertStats{WindMin: 99}
-	var readings []models.WindReading
+	stats := alertStatsFromRows(rows)
+	return rows, stats, nil
+}
 
-	for i, row := range rows {
-		period, err := time.ParseInLocation("2006-01-02 15:04:05", day+" "+row.Time+":00", now.Location())
+func parseAPIWind(body []byte, loc *time.Location) ([]models.WindReading, error) {
+	var parsed apiWindResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("decode ky wind api: %w", err)
+	}
+	if len(parsed.Rows) == 0 {
+		return nil, fmt.Errorf("ky wind api: no rows")
+	}
+
+	out := make([]models.WindReading, 0, len(parsed.Rows))
+	for _, row := range parsed.Rows {
+		if len(row) < 8 {
+			continue
+		}
+		period, err := parseAPIPeriod(row[0], row[1], loc)
 		if err != nil {
 			continue
 		}
-		temp := row.Temperature
-		readings = append(readings, models.WindReading{
+		dir, _ := strconv.ParseFloat(strings.TrimSpace(row[2]), 64)
+		wind, _ := strconv.ParseFloat(strings.TrimSpace(row[3]), 64)
+		gust, _ := strconv.ParseFloat(strings.TrimSpace(row[4]), 64)
+		temp, _ := strconv.ParseFloat(strings.TrimSpace(row[5]), 64)
+		humidity, _ := strconv.ParseFloat(strings.TrimSpace(row[6]), 64)
+		pressure, _ := strconv.ParseFloat(strings.TrimSpace(row[7]), 64)
+
+		t := temp
+		h := humidity
+		p := pressure
+		out = append(out, models.WindReading{
 			Period:   period,
 			Location: "ky",
-			Wind:     row.Wind,
-			Gust:     row.Gust,
-			WindDir:  row.Direction,
-			Temp:     &temp,
+			Wind:     wind,
+			Gust:     gust,
+			WindDir:  dir,
+			Temp:     &t,
+			Humidity: &h,
+			Pressure: &p,
 		})
-
-		if i < 5 {
-			if i == 0 {
-				stats.Temp = row.Temperature
-			}
-			if row.Wind > stats.WindMax {
-				stats.WindMax = row.Wind
-			}
-			if row.Wind < stats.WindMin {
-				stats.WindMin = row.Wind
-			}
-			if row.Gust > stats.GustMax {
-				stats.GustMax = row.Gust
-			}
-			stats.Msg = fmt.Sprintf("%.0f - %.0f, %.0fC", stats.WindMin, stats.GustMax, stats.Temp)
-		}
 	}
-
-	return readings, stats, nil
+	if len(out) == 0 {
+		return nil, fmt.Errorf("ky wind api: no valid rows")
+	}
+	return out, nil
 }
 
-func parseTable(rawHTML string) ([]Row, error) {
-	doc, err := html.Parse(strings.NewReader(rawHTML))
-	if err != nil {
-		return nil, err
+func parseAPIPeriod(dateStr, timeStr string, loc *time.Location) (time.Time, error) {
+	dateStr = strings.ReplaceAll(strings.TrimSpace(dateStr), `\`, "/")
+	timeStr = strings.TrimSpace(timeStr)
+	if len(timeStr) == 5 {
+		timeStr += ":00"
 	}
-
-	var rows []Row
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "tr" {
-			cells := tableCells(n)
-			if len(cells) >= 5 {
-				timeStr := strings.TrimSpace(cells[0].Text)
-				if timeStr != "" && timeStr != "Time" && !strings.EqualFold(timeStr, "שעה") {
-					wind, _ := strconv.ParseFloat(ktRe.ReplaceAllString(strings.TrimSpace(cells[3].Text), ""), 64)
-					gust, _ := strconv.ParseFloat(ktRe.ReplaceAllString(strings.TrimSpace(cells[4].Text), ""), 64)
-					tempStr := numRe.ReplaceAllString(strings.TrimSpace(cells[1].Text), "")
-					temp, _ := strconv.ParseFloat(tempStr, 64)
-					rows = append(rows, Row{
-						Time:        timeStr,
-						Temperature: temp,
-						Wind:        wind,
-						Gust:        gust,
-						Direction:   cells[2].Direction,
-					})
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return rows, nil
+	return time.ParseInLocation("02/01/2006 15:04:05", dateStr+" "+timeStr, loc)
 }
 
-type cell struct {
-	Text      string
-	Direction float64
-}
-
-func tableCells(tr *html.Node) []cell {
-	var cells []cell
-	for td := tr.FirstChild; td != nil; td = td.NextSibling {
-		if td.Type != html.ElementNode || (td.Data != "td" && td.Data != "th") {
-			continue
+func alertStatsFromRows(rows []models.WindReading) AlertStats {
+	stats := AlertStats{WindMin: 99}
+	start := 0
+	if len(rows) > 5 {
+		start = len(rows) - 5
+	}
+	recent := rows[start:]
+	if len(recent) == 0 {
+		return stats
+	}
+	if recent[len(recent)-1].Temp != nil {
+		stats.Temp = *recent[len(recent)-1].Temp
+	}
+	for _, r := range recent {
+		if r.Wind > stats.WindMax {
+			stats.WindMax = r.Wind
 		}
-		c := cell{Text: textContent(td), Direction: directionFromImg(td)}
-		cells = append(cells, c)
-	}
-	return cells
-}
-
-func textContent(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	var b strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		b.WriteString(textContent(c))
-	}
-	return b.String()
-}
-
-func directionFromImg(n *html.Node) float64 {
-	var found float64
-	var walk func(*html.Node)
-	walk = func(node *html.Node) {
-		if node.Type == html.ElementNode && node.Data == "img" {
-			for _, a := range node.Attr {
-				if a.Key == "style" {
-					if m := rotateRe.FindStringSubmatch(a.Val); len(m) == 2 {
-						found, _ = strconv.ParseFloat(m[1], 64)
-					}
-				}
-			}
+		if r.Wind < stats.WindMin {
+			stats.WindMin = r.Wind
 		}
-		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		if r.Gust > stats.GustMax {
+			stats.GustMax = r.Gust
 		}
 	}
-	walk(n)
-	return found
+	stats.Msg = fmt.Sprintf("%.0f - %.0f, %.0fC", stats.WindMin, stats.GustMax, stats.Temp)
+	return stats
 }

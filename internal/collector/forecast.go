@@ -25,6 +25,15 @@ type ForecastService struct {
 func (s *ForecastService) Run(now time.Time) error {
 	now = now.In(s.Cfg.Timezone)
 
+	start, end, err := s.Store.ForecastSchedule()
+	if err != nil {
+		return fmt.Errorf("forecast schedule: %w", err)
+	}
+	if !models.ForecastInWindow(start, end, now.Hour()) {
+		s.Log.Info("forecast skipped", "reason", "outside hours", "start", start, "end", end)
+		return nil
+	}
+
 	reportHe, err := s.Surfo.FetchReport()
 	if err != nil {
 		return fmt.Errorf("fetch surfo report: %w", err)

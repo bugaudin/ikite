@@ -90,40 +90,57 @@ func markMigrationApplied(db *sql.DB, name string) error {
 	return err
 }
 
-// seedLegacyMigrations marks migrations as applied on databases that were
-// migrated before schema_migrations existed.
+// seedLegacyMigrations marks migrations as applied when their schema changes
+// already exist (e.g. databases migrated before schema_migrations existed, or
+// when MIGRATIONS_PATH previously pointed at a single file).
 func seedLegacyMigrations(db *sql.DB, paths []string) error {
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	legacy := map[string]string{
-		"003_spot_collect.sql":  "collect",
-		"004_spot_schedule.sql": "collect_interval_min",
+	legacy := map[string]struct {
+		table  string
+		column string
+		index  string
+	}{
+		"003_spot_collect.sql":           {table: "spots", column: "collect"},
+		"004_spot_schedule.sql":          {table: "spots", column: "collect_interval_min"},
+		"006_wind_humidity_pressure.sql": {table: "wind_data", column: "humidity"},
+		"007_windguru_forecast.sql":           {table: "spots", column: "windguru_id"},
+		"008_wind_forecast_windguru_id.sql": {table: "wind_forecast", column: "windguru_id"},
+		"010_wind_data_unique.sql":        {index: "uk_wind_data_period_location"},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		col, ok := legacy[name]
+		spec, ok := legacy[name]
 		if !ok {
 			continue
 		}
-		exists, err := columnExists(db, "spots", col)
+		applied, err := migrationApplied(db, name)
 		if err != nil {
 			return err
 		}
-		if !exists {
+		if applied {
 			continue
+		}
+		if spec.index != "" {
+			exists, err := indexExists(db, spec.index)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				continue
+			}
+		} else {
+			exists, err := columnExists(db, spec.table, spec.column)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				continue
+			}
 		}
 		if err := markMigrationApplied(db, name); err != nil {
 			return err
 		}
 	}
 
-	// If spots exists, 001 and 002 were applied on legacy installs.
 	hasSpots, err := tableExists(db, "spots")
 	if err != nil {
 		return err
@@ -133,10 +150,18 @@ func seedLegacyMigrations(db *sql.DB, paths []string) error {
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		if strings.HasPrefix(name, "001_") || strings.HasPrefix(name, "002_") {
-			if err := markMigrationApplied(db, name); err != nil {
-				return err
-			}
+		if !strings.HasPrefix(name, "001_") && !strings.HasPrefix(name, "002_") {
+			continue
+		}
+		applied, err := migrationApplied(db, name)
+		if err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		if err := markMigrationApplied(db, name); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -158,6 +183,16 @@ func columnExists(db *sql.DB, table, column string) (bool, error) {
 		`SELECT COUNT(*) FROM information_schema.COLUMNS
 		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
 		table, column,
+	).Scan(&n)
+	return n > 0, err
+}
+
+func indexExists(db *sql.DB, name string) (bool, error) {
+	var n int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.STATISTICS
+		 WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ?`,
+		name,
 	).Scan(&n)
 	return n > 0, err
 }

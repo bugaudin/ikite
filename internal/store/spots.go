@@ -10,7 +10,7 @@ import (
 )
 
 const spotSelectSQL = `
-	SELECT id, name, windguru_station_id, sort_order, visible, collect,
+	SELECT id, name, windguru_station_id, windguru_id, sort_order, visible, collect,
 	       collect_interval_min, collect_start_hour, collect_end_hour
 	FROM spots`
 
@@ -56,6 +56,26 @@ func (s *Store) SpotByID(id string) (*models.Spot, error) {
 		return nil, err
 	}
 	return &sp, nil
+}
+
+func (s *Store) SpotsWithWindguruForecast() ([]models.Spot, error) {
+	rows, err := s.DB.Query(spotSelectSQL + `
+		WHERE windguru_id IS NOT NULL
+		ORDER BY sort_order, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.Spot
+	for rows.Next() {
+		sp, err := scanSpot(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sp)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SpotByWindguruID(stationID int) (*models.Spot, error) {
@@ -301,15 +321,19 @@ type spotScanner interface {
 
 func scanSpot(row spotScanner) (models.Spot, error) {
 	var sp models.Spot
-	var wg sql.NullInt64
+	var wg, wgSpot sql.NullInt64
 	var visible, collect int
-	if err := row.Scan(&sp.ID, &sp.Name, &wg, &sp.SortOrder, &visible, &collect,
+	if err := row.Scan(&sp.ID, &sp.Name, &wg, &wgSpot, &sp.SortOrder, &visible, &collect,
 		&sp.CollectIntervalMin, &sp.CollectStartHour, &sp.CollectEndHour); err != nil {
 		return sp, err
 	}
 	if wg.Valid {
 		id := int(wg.Int64)
 		sp.WindguruStationID = &id
+	}
+	if wgSpot.Valid {
+		id := int(wgSpot.Int64)
+		sp.WindguruID = &id
 	}
 	sp.Visible = visible != 0
 	sp.Collect = collect != 0

@@ -1,11 +1,20 @@
-# Beget / shared-hosting proxies
+# Beget / shared-hosting proxy
 
-Upload these PHP scripts to your hosting account and set the URLs in environment:
+Upload **one** script to your hosting account:
 
 | File | Env variable |
 |------|----------------|
-| `wg_station.php` | `BEGET_WG_STATION_URL` — e.g. `https://your-host.example/wg_station.php?id_station=%d` |
-| `wind_history.php` (if used) | `KY_HISTORY_URL` |
-| `proxy.php` (if used) | `SURFO_LIVE_URL` |
+| `proxy_post.php` | `BEGET_PROXY_URL` — e.g. `https://your-host.example/proxy_post.php` |
+
+The Go app POSTs JSON to `proxy_post.php` with the real target URL, method, headers, and body. All upstream URLs and Windguru API details live in this repo — you never edit PHP on Beget when APIs change.
+
+Upstream URLs (fetched via the proxy, not called directly):
+
+| Env variable | Example upstream |
+|--------------|------------------|
+| `KY_HISTORY_URL` | `https://surfo.co.il/wp-content/themes/vibes-child/inc/weather/data/api_wind.php` |
+| `SURFO_LIVE_URL` | `https://surfo.co.il/.../surfo_live.json` |
+
+Windguru station and forecast targets are built in Go (`internal/sources/windguru/`).
 
 Do not commit hosting credentials or account-specific URLs to git.

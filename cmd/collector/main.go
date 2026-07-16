@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/ben/ikite-go/internal/db"
-
+	"github.com/ben/ikite-go/internal/begetproxy"
 	"github.com/ben/ikite-go/internal/collector"
 	"github.com/ben/ikite-go/internal/config"
+	"github.com/ben/ikite-go/internal/db"
 	"github.com/ben/ikite-go/internal/notify/telegram"
 	"github.com/ben/ikite-go/internal/sources/kyhistory"
 	"github.com/ben/ikite-go/internal/sources/windguru"
@@ -36,12 +36,14 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	proxy := begetproxy.New(cfg.BegetProxyURL)
+
 	svc := &collector.Service{
 		Cfg:      cfg,
 		Store:    store.New(sqlDB),
-		WG:       windguru.New(cfg.BegetWGStationURL),
-		KY:       kyhistory.New(cfg.KYHistoryURL),
-		KH:       windometer.New(),
+		WG:       windguru.New(proxy),
+		KY:       kyhistory.New(proxy, cfg.KYHistoryURL),
+		KH:       windometer.New(proxy, cfg.WindometerLiveURL),
 		Telegram: telegram.New(cfg.TelegramAlertToken, cfg.TelegramAlertChatID),
 		Log:      log,
 	}

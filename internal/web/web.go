@@ -14,7 +14,7 @@ import (
 
 	"github.com/ben/ikite-go/internal/config"
 	"github.com/ben/ikite-go/internal/models"
-	"github.com/ben/ikite-go/internal/sources/windometer"
+	"github.com/ben/ikite-go/internal/prediction"
 	"github.com/ben/ikite-go/internal/store"
 	"github.com/ben/ikite-go/internal/wgtimer"
 )
@@ -25,7 +25,6 @@ var templateFS embed.FS
 type Server struct {
 	Cfg    *config.Config
 	Store  *store.Store
-	KH     *windometer.Client
 	Log    *slog.Logger
 	tmpl   *template.Template
 }
@@ -57,7 +56,6 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger) (*Server, error)
 	return &Server{
 		Cfg:   cfg,
 		Store: st,
-		KH:    windometer.New(),
 		Log:   log,
 		tmpl:  tmpl,
 	}, nil
@@ -73,6 +71,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /settings/spots/add", s.handleSettingsSpotsAdd)
 	mux.HandleFunc("POST /settings/forecast", s.handleSettingsForecast)
 	mux.HandleFunc("GET /camera", s.handleCamera)
+	mux.HandleFunc("GET /prediction", s.handlePrediction)
+	mux.HandleFunc("GET /api/prediction", s.handlePredictionAPI)
 	mux.HandleFunc("GET /home", s.handleHome)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -297,18 +297,27 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if forecastTelegram == "" {
 		forecastTelegram = "yes"
 	}
+	predictionTelegram, _ := s.Store.GetSetting("prediction_telegram")
+	if predictionTelegram == "" {
+		predictionTelegram = "yes"
+	}
+	forecastStart, forecastEnd, _ := s.Store.ForecastSchedule()
 	spotRows, _ := s.settingsSpotRows()
 	buttons := make([]int, 0, 13)
 	for i := 9; i <= 21; i++ {
 		buttons = append(buttons, i)
 	}
 	data := map[string]any{
-		"Threshold":        cur,
-		"ForecastTelegram": forecastTelegram,
-		"Spots":            spotRows,
-		"Buttons":          buttons,
-		"CollectIntervals": models.ValidCollectIntervals,
-		"CollectHours":     models.ValidCollectHours(),
+		"Threshold":          cur,
+		"ForecastTelegram":    forecastTelegram,
+		"PredictionTelegram":  predictionTelegram,
+		"ForecastStartHour": forecastStart,
+		"ForecastEndHour":    forecastEnd,
+		"Spots":              spotRows,
+		"Buttons":            buttons,
+		"CollectIntervals":   models.ValidCollectIntervals,
+		"CollectHours":       models.ValidCollectHours(),
+		"ForecastHours":      models.ValidForecastHours(),
 	}
 	if err := s.tmpl.ExecuteTemplate(w, "settings.html", data); err != nil {
 		s.Log.Error("render settings", "err", err)
@@ -475,13 +484,56 @@ func (s *Server) handleSettingsForecast(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	v := r.FormValue("forecast_telegram")
-	if v != "yes" && v != "no" {
-		http.Error(w, "invalid value", http.StatusBadRequest)
+	predV := r.FormValue("prediction_telegram")
+	if v != "" && v != "yes" && v != "no" {
+		http.Error(w, "invalid forecast_telegram value", http.StatusBadRequest)
 		return
 	}
-	if err := s.Store.SetSetting("forecast_telegram", v); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if predV != "" && predV != "yes" && predV != "no" {
+		http.Error(w, "invalid prediction_telegram value", http.StatusBadRequest)
 		return
+	}
+	if v != "" {
+		if err := s.Store.SetSetting("forecast_telegram", v); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if predV != "" {
+		if err := s.Store.SetSetting("prediction_telegram", predV); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	startStr := strings.TrimSpace(r.FormValue("forecast_start_hour"))
+	endStr := strings.TrimSpace(r.FormValue("forecast_end_hour"))
+	if v == "" && predV == "" && startStr == "" && endStr == "" {
+		http.Error(w, "no settings provided", http.StatusBadRequest)
+		return
+	}
+	if startStr != "" || endStr != "" {
+		start, end, _ := s.Store.ForecastSchedule()
+		if startStr != "" {
+			n, err := strconv.Atoi(startStr)
+			if err != nil || n < 0 || n > 24 {
+				http.Error(w, "invalid forecast start hour", http.StatusBadRequest)
+				return
+			}
+			start = n
+		}
+		if endStr != "" {
+			n, err := strconv.Atoi(endStr)
+			if err != nil || n < 0 || n > 24 {
+				http.Error(w, "invalid forecast end hour", http.StatusBadRequest)
+				return
+			}
+			end = n
+		}
+		if err := s.Store.SetForecastSchedule(start, end); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
@@ -510,6 +562,25 @@ func (s *Server) settingsSpotRows() ([]map[string]any, error) {
 func (s *Server) handleCamera(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, "camera.html", nil); err != nil {
 		s.Log.Error("render camera", "err", err)
+	}
+}
+
+func (s *Server) handlePrediction(w http.ResponseWriter, r *http.Request) {
+	if err := s.tmpl.ExecuteTemplate(w, "prediction.html", nil); err != nil {
+		s.Log.Error("render prediction", "err", err)
+	}
+}
+
+func (s *Server) handlePredictionAPI(w http.ResponseWriter, r *http.Request) {
+	res, err := prediction.ComputeCached(s.Store, time.Now(), s.Cfg.Timezone)
+	if err != nil {
+		s.Log.Error("prediction compute", "err", err)
+		http.Error(w, "prediction failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		s.Log.Error("encode prediction", "err", err)
 	}
 }
 

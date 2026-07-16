@@ -3,12 +3,14 @@ package models
 import "time"
 
 type WindReading struct {
-	Period   time.Time
-	Location string
-	Wind     float64
-	Gust     float64
-	WindDir  float64
-	Temp     *float64
+	Period    time.Time
+	Location  string
+	Wind      float64
+	Gust      float64
+	WindDir   float64
+	Temp      *float64
+	Humidity  *float64
+	Pressure  *float64
 }
 
 type Forecast struct {
@@ -26,15 +28,62 @@ type HomeWind struct {
 
 // Spot is a dashboard column; id matches wind_data.location.
 type Spot struct {
-	ID                string
-	Name              string
-	WindguruStationID *int
-	SortOrder         int
-	Visible           bool
-	Collect           bool
+	ID                 string
+	Name               string
+	WindguruStationID  *int
+	WindguruID         *int
+	SortOrder          int
+	Visible            bool
+	Collect            bool
 	CollectIntervalMin int
 	CollectStartHour   int
 	CollectEndHour     int
+}
+
+type WindForecastRow struct {
+	ForecastDate time.Time
+	Location     string
+	WindguruID   int
+	IDModel      int
+	Model        string
+	Period       time.Time
+	Wind         *float64
+	Gust         *float64
+	WindDir      *float64
+	Temp         *float64
+}
+
+// ValidForecastHours are allowed AI forecast start/stop hours (0–24).
+// Stop 24 means through end of day; otherwise stop is exclusive (stop 22 → no run from 22:00).
+func ValidForecastHours() []int {
+	h := make([]int, 25)
+	for i := range h {
+		h[i] = i
+	}
+	return h
+}
+
+func NormalizeForecastHour(v, fallback int) int {
+	if v >= 0 && v <= 24 {
+		return v
+	}
+	return fallback
+}
+
+// ForecastInWindow reports whether the forecast job may run at nowHour.
+func ForecastInWindow(startHour, endHour, nowHour int) bool {
+	startHour = NormalizeForecastHour(startHour, 8)
+	endHour = NormalizeForecastHour(endHour, 22)
+	if startHour > endHour && endHour < 24 {
+		startHour, endHour = 8, 22
+	}
+	if nowHour < startHour {
+		return false
+	}
+	if endHour >= 24 {
+		return true
+	}
+	return nowHour < endHour
 }
 
 // ValidCollectIntervals are allowed update intervals (minutes).

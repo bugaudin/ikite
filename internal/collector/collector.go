@@ -115,7 +115,7 @@ func (s *Service) Run(now time.Time) (*Result, error) {
 	if spot, err := s.Store.SpotByID("kh"); err == nil {
 		if ok, reason := s.shouldCollectSpot(*spot, now); ok {
 			var err error
-			kh, _, err = s.KH.FetchHistory(now)
+			kh, _, err = s.KH.Fetch(now)
 			if err != nil {
 				s.Log.Warn("windometer fetch failed", "err", err)
 			} else if kh != nil {

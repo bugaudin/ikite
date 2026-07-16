@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,9 +20,16 @@ func New(db *sql.DB) *Store {
 
 func (s *Store) InsertWind(r models.WindReading) error {
 	_, err := s.DB.Exec(`
-		INSERT IGNORE INTO wind_data (period, location, wind, gust, wind_dir, temp)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		r.Period, r.Location, r.Wind, r.Gust, r.WindDir, r.Temp,
+		INSERT INTO wind_data (period, location, wind, gust, wind_dir, temp, humidity, pressure)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			wind = VALUES(wind),
+			gust = VALUES(gust),
+			wind_dir = VALUES(wind_dir),
+			temp = VALUES(temp),
+			humidity = VALUES(humidity),
+			pressure = VALUES(pressure)`,
+		r.Period, r.Location, r.Wind, r.Gust, r.WindDir, r.Temp, r.Humidity, r.Pressure,
 	)
 	return err
 }
@@ -71,6 +79,48 @@ func (s *Store) ForecastTelegramEnabled() (bool, error) {
 	return val != "no", nil
 }
 
+func (s *Store) PredictionTelegramEnabled() (bool, error) {
+	val, err := s.GetSetting("prediction_telegram")
+	if err != nil {
+		return true, err
+	}
+	return val != "no", nil
+}
+
+func (s *Store) ForecastSchedule() (startHour, endHour int, err error) {
+	startHour, endHour = 8, 22
+	if v, err := s.GetSetting("forecast_start_hour"); err != nil {
+		return startHour, endHour, err
+	} else if v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			startHour = models.NormalizeForecastHour(n, 8)
+		}
+	}
+	if v, err := s.GetSetting("forecast_end_hour"); err != nil {
+		return startHour, endHour, err
+	} else if v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			endHour = models.NormalizeForecastHour(n, 22)
+		}
+	}
+	if startHour > endHour && endHour < 24 {
+		startHour, endHour = 8, 22
+	}
+	return startHour, endHour, nil
+}
+
+func (s *Store) SetForecastSchedule(startHour, endHour int) error {
+	startHour = models.NormalizeForecastHour(startHour, 8)
+	endHour = models.NormalizeForecastHour(endHour, 22)
+	if startHour > endHour && endHour < 24 {
+		startHour, endHour = 8, 22
+	}
+	if err := s.SetSetting("forecast_start_hour", strconv.Itoa(startHour)); err != nil {
+		return err
+	}
+	return s.SetSetting("forecast_end_hour", strconv.Itoa(endHour))
+}
+
 func splitKeys(val string) []string {
 	parts := strings.Split(val, ",")
 	out := make([]string, 0, len(parts))
@@ -118,15 +168,10 @@ func (s *Store) LatestWind(location string) (float64, error) {
 
 func (s *Store) ListWind(from, to time.Time) ([]models.WindReading, error) {
 	rows, err := s.DB.Query(`
-		SELECT w.period, w.location, w.wind, w.gust, w.wind_dir, w.temp
-		FROM wind_data w
-		INNER JOIN (
-			SELECT period, location, MAX(id) AS id
-			FROM wind_data
-			WHERE period > ? AND period < ?
-			GROUP BY period, location
-		) latest ON w.id = latest.id
-		ORDER BY w.period DESC`, from, to)
+		SELECT period, location, wind, gust, wind_dir, temp, humidity, pressure
+		FROM wind_data
+		WHERE period > ? AND period < ?
+		ORDER BY period DESC`, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +180,21 @@ func (s *Store) ListWind(from, to time.Time) ([]models.WindReading, error) {
 	var out []models.WindReading
 	for rows.Next() {
 		var r models.WindReading
-		var temp sql.NullFloat64
-		if err := rows.Scan(&r.Period, &r.Location, &r.Wind, &r.Gust, &r.WindDir, &temp); err != nil {
+		var temp, humidity, pressure sql.NullFloat64
+		if err := rows.Scan(&r.Period, &r.Location, &r.Wind, &r.Gust, &r.WindDir, &temp, &humidity, &pressure); err != nil {
 			return nil, err
 		}
 		if temp.Valid {
 			t := temp.Float64
 			r.Temp = &t
+		}
+		if humidity.Valid {
+			h := humidity.Float64
+			r.Humidity = &h
+		}
+		if pressure.Valid {
+			p := pressure.Float64
+			r.Pressure = &p
 		}
 		out = append(out, r)
 	}

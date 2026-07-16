@@ -37,6 +37,24 @@
       <option value="yes"{{if eq .ForecastTelegram "yes"}} selected{{end}}>Yes</option>
       <option value="no"{{if eq .ForecastTelegram "no"}} selected{{end}}>No</option>
     </select>
+    <label for="prediction_telegram" style="margin-left: 12px;">Send summer prediction (Jul–Aug, 11:00)</label>
+    <select id="prediction_telegram" name="prediction_telegram">
+      <option value="yes"{{if eq .PredictionTelegram "yes"}} selected{{end}}>Yes</option>
+      <option value="no"{{if eq .PredictionTelegram "no"}} selected{{end}}>No</option>
+    </select>
+    <br style="margin-top: 8px;" />
+    <label for="forecast_start" style="margin-top: 8px; display: inline-block;">Forecast start</label>
+    <select id="forecast_start" name="forecast_start_hour">
+      {{range $.ForecastHours}}
+      <option value="{{.}}"{{if eq $.ForecastStartHour .}} selected{{end}}>{{.}}:00</option>
+      {{end}}
+    </select>
+    <label for="forecast_end">Stop</label>
+    <select id="forecast_end" name="forecast_end_hour">
+      {{range $.ForecastHours}}
+      <option value="{{.}}"{{if eq $.ForecastEndHour .}} selected{{end}}>{{.}}:00</option>
+      {{end}}
+    </select>
     <span id="forecast-status" class="spot-status"></span>
   </p>
 
@@ -124,6 +142,9 @@
   <script>
     (function () {
       const forecastSelect = document.getElementById('forecast_telegram');
+      const predictionSelect = document.getElementById('prediction_telegram');
+      const forecastStart = document.getElementById('forecast_start');
+      const forecastEnd = document.getElementById('forecast_end');
       const forecastStatus = document.getElementById('forecast-status');
 
       function setForecastStatus(text, ok) {
@@ -136,8 +157,13 @@
         }
       }
 
-      forecastSelect.addEventListener('change', function () {
-        const body = new URLSearchParams({ forecast_telegram: forecastSelect.value });
+      function saveForecast() {
+        const body = new URLSearchParams({
+          forecast_telegram: forecastSelect.value,
+          prediction_telegram: predictionSelect.value,
+          forecast_start_hour: forecastStart.value,
+          forecast_end_hour: forecastEnd.value
+        });
         setForecastStatus('Saving…', true);
         fetch('/settings/forecast', {
           method: 'POST',
@@ -149,7 +175,12 @@
         }).catch(function () {
           setForecastStatus('Save failed', false);
         });
-      });
+      }
+
+      forecastSelect.addEventListener('change', saveForecast);
+      predictionSelect.addEventListener('change', saveForecast);
+      forecastStart.addEventListener('change', saveForecast);
+      forecastEnd.addEventListener('change', saveForecast);
     })();
 
     (function () {

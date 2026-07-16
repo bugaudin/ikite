@@ -14,9 +14,10 @@ type Config struct {
 	DSN      string
 	Timezone *time.Location
 
-	KYHistoryURL string
-	SurfoLiveURL string
-	BegetWGStationURL string
+	KYHistoryURL       string
+	SurfoLiveURL       string
+	WindometerLiveURL  string
+	BegetProxyURL      string
 
 	TelegramAlertToken  string
 	TelegramAlertChatID string
@@ -59,7 +60,8 @@ func Load() (*Config, error) {
 		Timezone:            loc,
 		KYHistoryURL:        os.Getenv("KY_HISTORY_URL"),
 		SurfoLiveURL:        os.Getenv("SURFO_LIVE_URL"),
-		BegetWGStationURL:   os.Getenv("BEGET_WG_STATION_URL"),
+		WindometerLiveURL:   os.Getenv("WINDOMETER_LIVE_URL"),
+		BegetProxyURL:       os.Getenv("BEGET_PROXY_URL"),
 		TelegramAlertToken:  os.Getenv("TELEGRAM_ALERT_TOKEN"),
 		TelegramAlertChatID: os.Getenv("TELEGRAM_ALERT_CHAT_ID"),
 		TelegramAIToken:     os.Getenv("TELEGRAM_AI_TOKEN"),

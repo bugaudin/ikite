@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ben/ikite-go/internal/begetproxy"
 	"github.com/ben/ikite-go/internal/collector"
 	"github.com/ben/ikite-go/internal/config"
 	"github.com/ben/ikite-go/internal/db"
@@ -33,7 +34,7 @@ func main() {
 	svc := &collector.ForecastService{
 		Cfg:       cfg,
 		Store:     store.New(sqlDB),
-		Surfo:     surfo.New(cfg.SurfoLiveURL),
+		Surfo:     surfo.New(begetproxy.New(cfg.BegetProxyURL), cfg.SurfoLiveURL),
 		Translate: translate.New(),
 		Telegram:  telegram.New(cfg.TelegramAIToken, cfg.TelegramAIChatID),
 		Log:       log,

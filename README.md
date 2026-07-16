@@ -11,6 +11,7 @@ Israeli Mediterranean wind monitoring for kitesurfing/windsurfing.
 - **Home sensor ingest** (`/home?w=<knots>`)
 - **Collector** — polls Windguru stations, Kiryat Yam history, Kiryat Haim (windometer), sends Telegram alerts
 - **Forecast job** — fetches Hebrew AI report from surfo, translates to English, stores + Telegram
+- **Windguru forecast job** — daily at 07:00, fetches all models for spots with `windguru_id` via Beget proxy
 
 ## Quick start
 
@@ -23,6 +24,7 @@ make build
 MIGRATE=1 ./bin/server        # http://localhost:8080
 ./bin/collector               # run every ~5 min via cron
 ./bin/forecast                # run every ~15–30 min via cron
+./bin/wgforecast              # daily 07:00 — Windguru model forecasts (see deploy/install-wg-forecast-timer.sh)
 ```
 
 ## Cron examples
@@ -44,9 +46,9 @@ Per-station Windguru timers (production): see `deploy/setup-wg-timers.sh` and `d
 | `SETTINGS_PASS` | UUID for `/settings?pass=…` (required to access admin) |
 | `TELEGRAM_ALERT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` | Wind alert bot |
 | `TELEGRAM_AI_TOKEN` / `TELEGRAM_AI_CHAT_ID` | Forecast bot |
-| `KY_HISTORY_URL` | Kiryat Yam history HTML proxy |
-| `SURFO_LIVE_URL` | AI forecast JSON proxy |
-| `BEGET_WG_STATION_URL` | Windguru station proxy (`%d` = station id) |
+| `BEGET_PROXY_URL` | Generic Beget `proxy_post.php` — all outbound fetches POST JSON here |
+| `KY_HISTORY_URL` | Upstream Surfo KY wind JSON (`api_wind.php`) |
+| `SURFO_LIVE_URL` | Upstream Surfo AI forecast JSON |
 | `WG_TIMER_QUEUE_DIR` | Directory for pending timer requests (web writes, root cron processes) |
 | `WG_TIMER_SCRIPT` | Path to `deploy/add-wg-timer.sh` (used by queue processor) |
 
@@ -55,7 +57,7 @@ Per-station Windguru timers (production): see `deploy/setup-wg-timers.sh` and `d
 ```
 cmd/server      HTTP dashboard
 cmd/collector   wind poll + alerts
-cmd/forecast    AI forecast job
+cmd/wgforecast  Windguru forecast job (daily)
 internal/       packages (store, sources, notify, web)
 migrations/     MySQL schema
 deploy/         systemd timers, PHP proxies, env template
@@ -67,7 +69,7 @@ Spots (names, Windguru IDs, visibility) are stored in the `spots` database table
 
 - `.env`, `server-keys/`, `*.pem`, and `bin/` are gitignored
 - Never commit Telegram tokens, DB passwords, `SETTINGS_PASS`, or SSH keys
-- Upload `deploy/beget/*.php` to your own hosting; configure URLs via env
+- Upload `deploy/beget/proxy_post.php` to your hosting; configure `BEGET_PROXY_URL` and upstream URLs via env
 
 ## Not ported (yet)
 
